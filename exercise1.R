@@ -237,11 +237,9 @@ boxplot( t(log_likelihood)  )
 
 # II.2.b
 
-# Model Set-up
-f = function(x_old) {
-  cos(
-    (x_old)^2
-  )
+# Model II Set-up
+f = function(x_previous) {
+  cos((x_previous))^2
 }
 
 C = 2
@@ -252,22 +250,73 @@ R = .01
 
 # Guassian model with non-linear dynamics
 
-dynamics = function(x_old, y) {
-  K = Q %*% t(C) %*% ( C %*% Q %*% t(C) + R)^-1
-  Sigma = (1 - K %*% C) %*% Q 
-  rnorm(f(x_old) + K*(y - C*f(x_old)), Sigma)
+proposal = function(x_previous, y) {
+  K = Q * C * ( C * Q * C + R)^-1
+  Sigma = sqrt( (1 - K * C) * Q ) 
+  rnorm(n = N, mean = f(x_previous) + K*(y - C*f(x_previous)), Sigma)
 }
 
-observations = function(x_old) {
-  rnorm( C %*% f(x_old), C %*% Q %*% t(C) + R )
+weights = function(y,x_previous) {
+  dnorm(y, mean = C * f(x_previous), sd = sqrt(C * Q * t(C) + R ))
 }
 
 # Fully Adapted Particle Filter - a variant of auxillary particle filter
 
 # Initialization
+T = 20
+N = 10          # particles
+x_true = numeric(T)
+x = list()
+y = list()
+nu = list()
+x_true[1] = 0 # We know the true starting state
+x[[1]] = rep(x_true[1], N)
 
-N = 100 # particles
+for (i in 2:T) {
+  # compute new x and y
+  x_true[i] = f(x_true[i-1]) + rnorm(n = 1, mean = 0, sd = sqrt(Q))
+  
+  y[[i]] = C * x_true[i] + rnorm(n = N, mean = 0, sd = sqrt(R))
+  
+  # resampling, vector of weights nu, weights = 1/n
+  nu[[i-1]] = 1/N * weights(y[[i]], x[[i-1]])
+  # ancestor indicies
+  a = sample(x = 1:N, size = N, replace = TRUE, prob = nu[[i-1]])
+  # propagation
+  x[[i]] = proposal( x[[i-1]][a], y[[i]])
+  
+}
 
-x_init = rep(pi/2, N)
-w_init = rep(1/N, N)
+
+# Bootstrap particle filter
+w = numeric(N)
+x_bootstrap = list()
+x_bootstrap[[1]] = rep(x_true[1], N) # we knnow the true starting state
+w = rep(1/N, N) # iitial weights
+x_weighted_mean = numeric(N)
+
+for (i in 2:T) {
+  a = sample(x = 1:N, size = N, replace = TRUE, prob = w) # ancestor indicesa
+  x_bootstrap[[i]] = f(x_bootstrap[[i-1]][a]) + rnorm(n = N, mean = 0, sd = sqrt(Q)) # propagation step
+  
+  # y[[i]] = C * x_true[i] + rnorm(n = N, mean = 0, sd = sqrt(R))
+  # y[[i]] has been computed previously
+  
+  w_unnormalized = dnorm(x = y[[i]], mean = C*x_bootstrap[[i]], sd = sqrt(R) )
+  
+  w = w_unnormalized / sum(w_unnormalized)
+  
+  x_weighted_mean[i] = sum(x_bootstrap[[i]]*w)
+}
+
+plot(x_true)
+#lines(x_true, col = "red")
+
+
+points(sapply(X = x, mean), col = "red")
+lines(sapply(X = x, mean), col = "red")
+
+points(x_weighted_mean, col = "green")
+lines(x_weighted_mean, col = "green")
+
 
